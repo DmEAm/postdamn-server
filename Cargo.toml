@@ -1,0 +1,15 @@
+[package]
+name = "postdamn"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "postdamn"
+path = "src/main.rs"
+
+[dependencies]
+bitmask-enum = "2.1.0"
+diesel = { version = "2.0.2", features = ["postgres", "chrono", "r2d2", "uuid"] }
+diesel_ltree = "0.3.0"
+dotenvy = "0.15.6"
+uuid = { version = "1.2.2", features = ["serde", "fast-rng", "v4", "macro-diagnostics"] }
