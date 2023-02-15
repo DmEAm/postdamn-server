@@ -1,6 +1,5 @@
 // @generated automatically by Diesel CLI.
 
-
 pub mod security {
     pub mod sql_types {
         #[derive(diesel::sql_types::SqlType)]
@@ -14,7 +13,8 @@ pub mod security {
 
         security.permissions (id) {
             id -> Ltree,
-            created_at -> Nullable<Timestamp>,
+            created_at -> Timestamp,
+            updated_at -> Nullable<Timestamp>,
             name -> Varchar,
         }
     }
@@ -32,7 +32,8 @@ pub mod security {
     diesel::table! {
         security.roles (id) {
             id -> Uuid,
-            created_at -> Nullable<Timestamp>,
+            created_at -> Timestamp,
+            updated_at -> Nullable<Timestamp>,
             name -> Varchar,
         }
     }
@@ -57,7 +58,8 @@ pub mod security {
     diesel::table! {
         security.users (id) {
             id -> Uuid,
-            created_at -> Nullable<Timestamp>,
+            created_at -> Timestamp,
+            updated_at -> Nullable<Timestamp>,
             name -> Varchar,
             email -> Text,
             phone -> Text,

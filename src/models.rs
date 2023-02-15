@@ -1,27 +1,31 @@
 use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::time::{SystemTime};
+use chrono::{DateTime, Utc, NaiveDateTime};
+use chrono::serde::ts_seconds_option;
 use diesel_ltree::Ltree;
 use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
 #[derive(Queryable)]
 pub struct Role {
     pub id: Uuid,
+    pub created_at: NaiveDateTime,
+    pub updated_at: Option<NaiveDateTime>,
     pub name: String,
-    pub created_at: SystemTime,
 }
 
 #[derive(Queryable)]
 pub struct Permission {
     pub id: Ltree,
+    pub created_at: NaiveDateTime,
+    pub updated_at: Option<NaiveDateTime>,
     pub name: String,
-    pub created_at: SystemTime,
 }
 
-#[derive(Queryable, Debug)]
+#[derive(Queryable, Serialize, Debug)]
 pub struct User {
     pub id: Uuid,
-    pub created_at: SystemTime,
+    pub created_at: NaiveDateTime,
+    pub updated_at: Option<NaiveDateTime>,
     pub name: String,
     pub email: String,
     pub phone: String,
@@ -38,13 +42,15 @@ pub struct RolePermission {
     pub permission_id: Ltree,
     pub role_id: Uuid,
 }
+
 #[derive(Queryable)]
 pub struct UserPermission {
     pub permission_id: Ltree,
     pub user_id: Uuid,
 }
-impl Display for User {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+
+impl fmt::Display for User {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "User (Id={}, Name={})", self.id, self.name)
     }
 }

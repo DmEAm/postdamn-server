@@ -1,4 +1,4 @@
-use postdamn::service::Example;
+use postdamn::services::Example;
 
 fn main(){
 

@@ -19,25 +19,28 @@ comment on domain phone is 'Phone number in E.164';
 
 create table users
 (
-    id    uuid primary key,
-    created_at  timestamp default now(),
-    name  varchar not null,
-    email email   not null,
-    phone phone   not null
+    id         uuid primary key   default uuid_generate_v4(),
+    created_at timestamp not null default now(),
+    updated_at timestamp null,
+    name       varchar   not null,
+    email      email     not null,
+    phone      phone     not null
 );
 
 create table roles
 (
-    id   uuid primary key,
-    created_at  timestamp default now(),
-    name varchar not null
+    id         uuid primary key   default uuid_generate_v4(),
+    created_at timestamp not null default now(),
+    updated_at timestamp null,
+    name       varchar   not null
 );
 
 create table permissions
 (
-    id   ltree primary key,
-    created_at  timestamp default now(),
-    name varchar not null
+    id         ltree primary key,
+    created_at timestamp not null default now(),
+    updated_at timestamp null,
+    name       varchar   not null
 );
 
 create table user_roles
