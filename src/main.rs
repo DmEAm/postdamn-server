@@ -15,9 +15,8 @@ use axum::{
     Router,
     routing::{get, post},
 };
-use diesel::{Connection, debug_query, pg::Pg, PgConnection, prelude::*};
+use diesel::{Connection, PgConnection};
 use dotenvy::dotenv;
-use serde::{Deserialize, Serialize};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::{
     IntoParams, Modify, OpenApi,
@@ -41,12 +40,20 @@ pub fn establish_connection() -> PgConnection {
 }
 
 mod users {
-    use axum::{http::StatusCode, Json, extract::Query};
-    use diesel::{prelude::*};
+    use axum::{extract::Query, http::StatusCode, Json};
+    use diesel::{
+        debug_query, insert_into,
+        prelude::*,
+        result::{Error, DatabaseErrorKind},
+        pg::Pg,
+    };
     use diesel::query_builder::AsQuery;
     use serde::{Deserialize, Serialize};
 
-    use crate::{debug_query, establish_connection, params, Pg};
+    use schema::security::users;
+    use validator::{Validate, ValidationError};
+
+    use crate::{establish_connection, params, schema};
     use crate::models::User;
 
     #[derive(Debug)]
@@ -84,9 +91,14 @@ mod users {
         (StatusCode::OK, Json(u))
     }
 
-    #[derive(Deserialize, ToSchema)]
+    #[derive(Deserialize, ToSchema, Validate, Insertable)]
+    #[diesel(table_name = users)]
     pub struct CreateUser {
         name: String,
+        #[validate(email)]
+        email: String,
+        #[validate(phone)]
+        phone: String,
     }
 
     /// Create user
@@ -94,17 +106,19 @@ mod users {
     (status = 201, description = "User successfully created", body = User)),
     params()
     )]
-    pub async fn post_user(Json(payload): Json<CreateUser>) -> (StatusCode, Json<User>) {
-        let user = User {
-            id: Default::default(),
-            created_at: Default::default(),
-            updated_at: None,
-            name: payload.name,
-            email: "".to_string(),
-            phone: "".to_string(),
-        };
+    pub async fn post_user(
+        Json(payload): Json<CreateUser>,
+    ) -> Result<(StatusCode, Json<User>), StatusCode> {
+        use crate::schema::security::users::dsl::*;
+        let mut connection = establish_connection();
+        let result = insert_into(users)
+            .values(payload)
+            .get_result(&mut connection);
 
-        (StatusCode::CREATED, Json(user))
+        match result {
+            Ok(user) => Ok((StatusCode::CREATED, Json(user))),
+            Err(e) => Err(StatusCode::BAD_REQUEST),
+        }
     }
 }
 #[derive(OpenApi)]
