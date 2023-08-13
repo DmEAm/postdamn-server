@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc, NaiveDateTime};
 use chrono::serde::ts_seconds_option;
 use diesel_ltree::Ltree;
 use uuid::Uuid;
+use utoipa::ToSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Queryable)]
@@ -21,7 +22,7 @@ pub struct Permission {
     pub name: String,
 }
 
-#[derive(Queryable, Serialize, Debug)]
+#[derive(Queryable, Serialize, Debug, ToSchema)]
 pub struct User {
     pub id: Uuid,
     pub created_at: NaiveDateTime,
