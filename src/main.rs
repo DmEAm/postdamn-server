@@ -27,7 +27,6 @@ use postdamn::{
     models::{Role, User},
     services::Example,
 };
-use tokio_postgres::NoTls;
 
 pub fn establish_connection() -> PgConnection {
     let url = env::var("DATABASE_URL").expect("Database url env var not set");
@@ -37,12 +36,13 @@ pub fn establish_connection() -> PgConnection {
 async fn get_users_list() -> (StatusCode, Json<Vec<User>>) {
     use self::schema::security::users::dsl::*;
     let mut connection = establish_connection();
+    tracing::debug!("processing request");
     let q = users
         .filter(name.eq("test"))
         .order_by(name)
         .then_order_by(id)
         .limit(5);
-    tracing::debug!("Run SQL {}", debug_query::<Pg, _>(&q));
+    tracing::trace!("Execute SQL {}", debug_query::<Pg, _>(&q));
     let u: Vec<User> = q
         .load::<User>(&mut connection)
         .expect("Error loading users");
@@ -73,7 +73,7 @@ async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "example_tokio_postgres=debug".into()),
+                .unwrap_or_else(|_| "postdamn=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -83,7 +83,7 @@ async fn main() {
     let app = Router::new().nest("/api/:version", api_routes);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    tracing::debug!("listening on {}", addr);
+    tracing::info!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
