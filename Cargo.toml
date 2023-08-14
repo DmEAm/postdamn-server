@@ -19,6 +19,7 @@ diesel_ltree = "0.3.0"
 
 axum = { version = "0.6.6", features = ["http2", "macros"] }
 validator = { version = "0.16.1", features = ["phone", "derive"] }
+problemdetails = { version = "0.2.1", features = ["axum"] }
 utoipa = { version = "3.4.4", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "3.1.5", features = ["axum"] }
 

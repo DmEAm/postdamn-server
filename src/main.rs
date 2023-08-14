@@ -5,32 +5,36 @@ extern crate diesel;
 extern crate utoipa;
 
 use std::{default::Default, env, net::SocketAddr};
+use std::error::Error;
 
 use axum::{
+    async_trait,
+    extract::FromRequest,
     extract::State,
     handler::Handler,
-    http::StatusCode,
-    Json,
+    http::{Request, StatusCode},
+    Json, RequestExt,
     response::IntoResponse,
     Router,
     routing::{get, post},
 };
 use diesel::{Connection, PgConnection};
 use dotenvy::dotenv;
+use problemdetails::Problem;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::{
     IntoParams, Modify, OpenApi,
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     ToSchema,
 };
+use utoipa_swagger_ui::SwaggerUi;
 
 use postdamn::{
+    core::ValidatedJson,
     models::{Role, User},
     services::Example,
 };
-use utoipa_swagger_ui::SwaggerUi;
 
-pub mod models;
 pub mod params;
 pub mod schema;
 
@@ -43,18 +47,17 @@ mod users {
     use axum::{extract::Query, http::StatusCode, Json};
     use diesel::{
         debug_query, insert_into,
-        prelude::*,
-        result::{Error, DatabaseErrorKind},
         pg::Pg,
+        prelude::*,
+        result::{DatabaseErrorKind, Error},
     };
     use diesel::query_builder::AsQuery;
     use serde::{Deserialize, Serialize};
-
-    use schema::security::users;
     use validator::{Validate, ValidationError};
 
-    use crate::{establish_connection, params, schema};
-    use crate::models::User;
+    use schema::security::users;
+
+    use crate::{establish_connection, User, schema, params, ValidatedJson};
 
     #[derive(Debug)]
     pub struct GetUsersRequest {
@@ -63,7 +66,7 @@ mod users {
     }
     /// All users info
     #[utoipa::path(get, path = "/api/v1/users", responses(
-    (status = 200, description = "List of users", body = [User])),
+    (status = StatusCode::OK, description = "List of users", body = [User])),
     params(params::Page, params::Search)
     )]
     pub async fn get_users_list(
@@ -103,11 +106,11 @@ mod users {
 
     /// Create user
     #[utoipa::path(post, path = "/api/v1/users", responses(
-    (status = 201, description = "User successfully created", body = User)),
+    (status = StatusCode::CREATED, description = "User successfully created", body = User)),
     params()
     )]
     pub async fn post_user(
-        Json(payload): Json<CreateUser>,
+        ValidatedJson(payload): ValidatedJson<CreateUser>,
     ) -> Result<(StatusCode, Json<User>), StatusCode> {
         use crate::schema::security::users::dsl::*;
         let mut connection = establish_connection();
