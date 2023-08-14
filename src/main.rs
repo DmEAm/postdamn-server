@@ -18,6 +18,7 @@ use axum::{
     Router,
     routing::{get, post},
 };
+use axum::BoxError;
 use diesel::{Connection, PgConnection};
 use dotenvy::dotenv;
 use problemdetails::Problem;
@@ -52,12 +53,13 @@ mod users {
         result::{DatabaseErrorKind, Error},
     };
     use diesel::query_builder::AsQuery;
+    use problemdetails::Problem;
     use serde::{Deserialize, Serialize};
     use validator::{Validate, ValidationError};
 
     use schema::security::users;
 
-    use crate::{establish_connection, User, schema, params, ValidatedJson};
+    use crate::{establish_connection, params, schema, User, ValidatedJson};
 
     #[derive(Debug)]
     pub struct GetUsersRequest {
@@ -85,7 +87,7 @@ mod users {
             .into_boxed();
 
         if let Some(q) = search.q.as_ref() {
-            query = query.filter(name.eq(q))
+            query = query.filter(name.like(format!("%{}%", q)))
         }
         tracing::trace!("Execute SQL {}", debug_query::<Pg, _>(&query));
         let u: Vec<User> = query
@@ -111,17 +113,23 @@ mod users {
     )]
     pub async fn post_user(
         ValidatedJson(payload): ValidatedJson<CreateUser>,
-    ) -> Result<(StatusCode, Json<User>), StatusCode> {
+    ) -> Result<(StatusCode, Json<User>), Problem> {
         use crate::schema::security::users::dsl::*;
         let mut connection = establish_connection();
         let result = insert_into(users)
             .values(payload)
-            .get_result(&mut connection);
-
-        match result {
-            Ok(user) => Ok((StatusCode::CREATED, Json(user))),
-            Err(e) => Err(StatusCode::BAD_REQUEST),
-        }
+            .get_result::<User>(&mut connection)
+            .map_err(|e| match e {
+                Error::DatabaseError(
+                    DatabaseErrorKind::UniqueViolation | DatabaseErrorKind::ForeignKeyViolation,
+                    message,
+                ) => problemdetails::new(StatusCode::BAD_REQUEST)
+                    .with_title("One or more errors occurred.")
+                    .with_detail(message.details().unwrap_or(message.message())),
+                _ => problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                    .with_title("Internal server error."),
+            })?;
+        Ok((StatusCode::CREATED, Json(result)))
     }
 }
 #[derive(OpenApi)]
@@ -146,6 +154,8 @@ struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
+    use axum::error_handling::HandleErrorLayer;
+
     dotenv().ok();
     tracing_subscriber::registry()
         .with(
