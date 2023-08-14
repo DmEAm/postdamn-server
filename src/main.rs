@@ -5,7 +5,6 @@ extern crate diesel;
 extern crate utoipa;
 
 use std::{default::Default, env, net::SocketAddr};
-use std::error::Error;
 
 use axum::{
     async_trait,
@@ -14,12 +13,15 @@ use axum::{
     handler::Handler,
     http::{Request, StatusCode},
     Json, RequestExt,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Router,
     routing::{get, post},
 };
 use axum::BoxError;
 use diesel::{Connection, PgConnection};
+use diesel::{
+    result::{DatabaseErrorKind, Error},
+};
 use dotenvy::dotenv;
 use problemdetails::Problem;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -34,6 +36,7 @@ use postdamn::{
     core::ValidatedJson,
     models::{Role, User},
     services::Example,
+    error::PostdamnError,
 };
 
 pub mod params;
@@ -43,7 +46,6 @@ pub fn establish_connection() -> PgConnection {
     let url = env::var("DATABASE_URL").expect("Database url env var not set");
     PgConnection::establish(&url).ok().unwrap()
 }
-
 mod users {
     use axum::{extract::Query, http::StatusCode, Json};
     use diesel::{
@@ -59,7 +61,7 @@ mod users {
 
     use schema::security::users;
 
-    use crate::{establish_connection, params, schema, User, ValidatedJson};
+    use crate::{establish_connection, params, PostdamnError, schema, User, ValidatedJson};
 
     #[derive(Debug)]
     pub struct GetUsersRequest {
@@ -113,22 +115,13 @@ mod users {
     )]
     pub async fn post_user(
         ValidatedJson(payload): ValidatedJson<CreateUser>,
-    ) -> Result<(StatusCode, Json<User>), Problem> {
+    ) -> Result<(StatusCode, Json<User>), PostdamnError> {
         use crate::schema::security::users::dsl::*;
         let mut connection = establish_connection();
         let result = insert_into(users)
             .values(payload)
             .get_result::<User>(&mut connection)
-            .map_err(|e| match e {
-                Error::DatabaseError(
-                    DatabaseErrorKind::UniqueViolation | DatabaseErrorKind::ForeignKeyViolation,
-                    message,
-                ) => problemdetails::new(StatusCode::BAD_REQUEST)
-                    .with_title("One or more errors occurred.")
-                    .with_detail(message.details().unwrap_or(message.message())),
-                _ => problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                    .with_title("Internal server error."),
-            })?;
+            .map_err(|e| PostdamnError::from(e))?;
         Ok((StatusCode::CREATED, Json(result)))
     }
 }

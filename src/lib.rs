@@ -3,6 +3,7 @@ extern crate chrono;
 extern crate diesel;
 
 pub mod core;
+pub mod error;
 pub mod models;
 pub mod schema;
 pub mod services;
