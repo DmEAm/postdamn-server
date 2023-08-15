@@ -17,11 +17,11 @@ use axum::{
     Router,
     routing::{get, post},
 };
-use axum::BoxError;
-use diesel::{Connection, PgConnection};
 use diesel::{
+    Connection, ConnectionResult, PgConnection,
     result::{DatabaseErrorKind, Error},
 };
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use dotenvy::dotenv;
 use problemdetails::Problem;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -34,27 +34,29 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use postdamn::{
     core::ValidatedJson,
+    error::PostdamnError,
     models::{Role, User},
     services::Example,
-    error::PostdamnError,
 };
 
 pub mod params;
 pub mod schema;
 
-pub fn establish_connection() -> PgConnection {
+pub async fn establish_connection() -> ConnectionResult<AsyncPgConnection> {
     let url = env::var("DATABASE_URL").expect("Database url env var not set");
-    PgConnection::establish(&url).ok().unwrap()
+    Ok(AsyncPgConnection::establish(&url).await?)
 }
 mod users {
     use axum::{extract::Query, http::StatusCode, Json};
+    use axum::body::HttpBody;
     use diesel::{
         debug_query, insert_into,
         pg::Pg,
         prelude::*,
+        query_builder::AsQuery,
         result::{DatabaseErrorKind, Error},
     };
-    use diesel::query_builder::AsQuery;
+    use diesel_async::RunQueryDsl;
     use problemdetails::Problem;
     use serde::{Deserialize, Serialize};
     use validator::{Validate, ValidationError};
@@ -76,9 +78,9 @@ mod users {
     pub async fn get_users_list(
         page: Query<params::Page>,
         search: Query<params::Search>,
-    ) -> (StatusCode, Json<Vec<User>>) {
+    ) -> Result<(StatusCode, Json<Vec<User>>), PostdamnError> {
         use crate::schema::security::users::dsl::*;
-        let mut connection = establish_connection();
+        let mut connection = establish_connection().await.map_err(|e| e.into())?;
         tracing::debug!("processing request");
 
         let mut query = users
@@ -92,10 +94,8 @@ mod users {
             query = query.filter(name.like(format!("%{}%", q)))
         }
         tracing::trace!("Execute SQL {}", debug_query::<Pg, _>(&query));
-        let u: Vec<User> = query
-            .load::<User>(&mut connection)
-            .expect("Error loading users");
-        (StatusCode::OK, Json(u))
+        let u: Vec<User> = query.load(&mut connection).await.map_err(|e| e.into())?;
+        Ok((StatusCode::OK, Json(u)))
     }
 
     #[derive(Deserialize, ToSchema, Validate, Insertable)]
@@ -117,11 +117,12 @@ mod users {
         ValidatedJson(payload): ValidatedJson<CreateUser>,
     ) -> Result<(StatusCode, Json<User>), PostdamnError> {
         use crate::schema::security::users::dsl::*;
-        let mut connection = establish_connection();
+        let mut connection = establish_connection().await.map_err(|e| e.into())?;
         let result = insert_into(users)
             .values(payload)
             .get_result::<User>(&mut connection)
-            .map_err(|e| PostdamnError::from(e))?;
+            .await
+            .map_err(|e| e.into())?;
         Ok((StatusCode::CREATED, Json(result)))
     }
 }
