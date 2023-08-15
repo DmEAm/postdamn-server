@@ -1,7 +1,11 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use diesel::ConnectionError;
-use diesel::result::{DatabaseErrorKind, Error};
+use bb8::RunError;
+use diesel::{
+    ConnectionError,
+    result::{DatabaseErrorKind, Error},
+};
+use diesel_async::pooled_connection::PoolError;
 
 pub enum PostdamnError {
     DatabaseError(Error),
@@ -38,5 +42,10 @@ impl Into<PostdamnError> for ConnectionError {
 impl Into<PostdamnError> for Error {
     fn into(self) -> PostdamnError {
         PostdamnError::DatabaseError(self)
+    }
+}
+impl Into<PostdamnError> for RunError<PoolError> {
+    fn into(self) -> PostdamnError {
+        ConnectionError::BadConnection(self.to_string()).into()
     }
 }

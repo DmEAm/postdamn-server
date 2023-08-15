@@ -9,7 +9,6 @@ use std::{default::Default, env, net::SocketAddr};
 use axum::{
     async_trait,
     extract::FromRequest,
-    extract::State,
     handler::Handler,
     http::{Request, StatusCode},
     Json, RequestExt,
@@ -17,11 +16,15 @@ use axum::{
     Router,
     routing::{get, post},
 };
+use bb8::Pool;
 use diesel::{
     Connection, ConnectionResult, PgConnection,
     result::{DatabaseErrorKind, Error},
 };
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{
+    AsyncConnection, AsyncPgConnection, pooled_connection::AsyncDieselConnectionManager,
+    RunQueryDsl,
+};
 use dotenvy::dotenv;
 use problemdetails::Problem;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -42,13 +45,10 @@ use postdamn::{
 pub mod params;
 pub mod schema;
 
-pub async fn establish_connection() -> ConnectionResult<AsyncPgConnection> {
-    let url = env::var("DATABASE_URL").expect("Database url env var not set");
-    Ok(AsyncPgConnection::establish(&url).await?)
-}
 mod users {
     use axum::{extract::Query, http::StatusCode, Json};
     use axum::body::HttpBody;
+    use axum::extract::State;
     use diesel::{
         debug_query, insert_into,
         pg::Pg,
@@ -63,7 +63,7 @@ mod users {
 
     use schema::security::users;
 
-    use crate::{establish_connection, params, PostdamnError, schema, User, ValidatedJson};
+    use crate::{params, PostdamnError, PostdamnState, schema, User, ValidatedJson};
 
     #[derive(Debug)]
     pub struct GetUsersRequest {
@@ -76,11 +76,12 @@ mod users {
     params(params::Page, params::Search)
     )]
     pub async fn get_users_list(
+        State(state): State<PostdamnState>,
         page: Query<params::Page>,
         search: Query<params::Search>,
     ) -> Result<(StatusCode, Json<Vec<User>>), PostdamnError> {
         use crate::schema::security::users::dsl::*;
-        let mut connection = establish_connection().await.map_err(|e| e.into())?;
+        let mut connection = state.pool.get().await.map_err(|e| e.into())?;
         tracing::debug!("processing request");
 
         let mut query = users
@@ -114,10 +115,11 @@ mod users {
     params()
     )]
     pub async fn post_user(
+        State(state): State<PostdamnState>,
         ValidatedJson(payload): ValidatedJson<CreateUser>,
     ) -> Result<(StatusCode, Json<User>), PostdamnError> {
         use crate::schema::security::users::dsl::*;
-        let mut connection = establish_connection().await.map_err(|e| e.into())?;
+        let mut connection = state.pool.get().await.map_err(|e| e.into())?;
         let result = insert_into(users)
             .values(payload)
             .get_result::<User>(&mut connection)
@@ -146,11 +148,24 @@ users::post_user,
 )]
 struct ApiDoc;
 
+type ConnectionPool = Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
+
+#[derive(Clone)]
+pub struct PostdamnState {
+    pub pool: ConnectionPool,
+}
+
+impl PostdamnState {
+    fn new(pool: ConnectionPool) -> Self {
+        PostdamnState { pool }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     use axum::error_handling::HandleErrorLayer;
 
-    dotenv().ok();
+    dotenv().unwrap();
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -159,11 +174,18 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let manager = AsyncDieselConnectionManager::new(
+        env::var("DATABASE_URL").expect("Database url env var not set"),
+    );
+    let pool = Pool::builder().max_size(40).build(manager).await.unwrap();
+
+    let state = PostdamnState::new(pool.clone());
     let user_routes = Router::new().route("/", get(users::get_users_list).post(users::post_user));
     let api_routes = Router::new().nest("/users", user_routes);
     let app = Router::new()
         .nest("/api/:version", api_routes)
-        .merge(SwaggerUi::new("/swagger").url("/swagger/v1/swagger.json", ApiDoc::openapi()));
+        .merge(SwaggerUi::new("/swagger").url("/swagger/v1/swagger.json", ApiDoc::openapi()))
+        .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("listening on {}", addr);
