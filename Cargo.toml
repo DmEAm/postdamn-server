@@ -14,12 +14,13 @@ chrono = { version = "0.4.23", features = ["serde"] }
 dotenvy = "0.15.6"
 serde = { version = "1.0.152", features = ["derive"] }
 
-diesel = { version = "2.0.2", features = ["postgres", "chrono", "r2d2", "uuid"] }
+diesel = { version = "2.0.2", features = ["postgres", "chrono", "uuid"] }
 diesel_ltree = "0.3.0"
 diesel-async = { version = "0.3.2", features = ["postgres", "bb8"] }
 bb8 = "0.8.1"
 
 axum = { version = "0.6.6", features = ["http2", "macros"] }
+axum_sessions_auth = { version = "7.0.0", features = ["redis-db"] }
 validator = { version = "0.16.1", features = ["phone", "derive"] }
 problemdetails = { version = "0.2.1", features = ["axum"] }
 utoipa = { version = "3.4.4", features = ["axum_extras", "uuid", "chrono"] }
