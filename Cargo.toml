@@ -7,6 +7,11 @@ edition = "2021"
 name = "postdamn"
 path = "src/main.rs"
 
+[workspace]
+members = [
+    "catify",
+]
+
 [dependencies]
 bitmask-enum = "2.1.0"
 uuid = { version = "1.2.2", features = ["serde", "fast-rng", "v4", "macro-diagnostics"] }
