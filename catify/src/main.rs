@@ -1,48 +1,79 @@
-use std::convert::Infallible;
 use std::env;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::copy;
-use std::path::Path;
+
 use error_chain::error_chain;
-use tch::{Cuda, Device, Tensor, vision::resnet};
+use reqwest::Url;
+use tch::{CModule, Cuda, Device, vision::resnet};
+use tch::Kind::Float;
 use tch::nn::VarStore;
+use tch::vision::imagenet;
 use tracing;
+use tracing::debug;
+
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 error_chain! {
      foreign_links {
+         Torch(tch::TchError);
          Io(std::io::Error);
          HttpRequest(reqwest::Error);
      }
 }
-async fn cached_weights() -> std::result::Result<VarStore, Infallible> {
-    let weights_url = "https://download.pytorch.org/models/resnet50-0676ba61.pth";
+async fn trained_model() -> Result<CModule> {
+    let weights_url =
+        Url::parse("https://download.pytorch.org/models/resnet50-0676ba61.pth").expect("valid url");
+
+    let file_name = weights_url
+        .path_segments()
+        .and_then(|segments| segments.last())
+        .unwrap_or("tmp.pth");
+    let file_name = env::current_dir()
+        .expect("must exist")
+        .join("models")
+        .join(file_name);
+
     let response = reqwest::get(weights_url).await?;
 
     let mut dest = {
-        let fname = response
-            .url()
-            .path_segments()
-            .and_then(|segments| segments.last())
-            .and_then(|name| if name.is_empty() { None } else { Some(name) })
-            .unwrap_or("tmp.pth");
-
-        let fname = env::current_dir().expect("must exist").join(fname.clone());
-
-        println!("file to download: '{:?}'", fname.file_name());
-        println!("will be located under: '{:?}'", fname);
-        File::create(fname)?
+        if file_name.exists() {
+            debug!("model file exist: '{:?}'", file_name.file_name().unwrap());
+            OpenOptions::new()
+                .read(true)
+                .write(false)
+                .truncate(false)
+                .open(&file_name)?
+        } else {
+            debug!("file to download: '{:?}'", file_name.file_name().unwrap());
+            debug!("will be located under: '{:?}'", &file_name);
+            let mut dest = File::create(&file_name)?;
+            let content = response.text().await?;
+            copy(&mut content.as_bytes(), &mut dest)?;
+            dest
+        }
     };
-    let content = response.text().await?;
-    copy(&mut content.as_bytes(), &mut dest)?;
-
-    VarStore::try_from(dest.)
+    Ok(CModule::load(file_name)?)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing::debug!("Cuda is available {}", Cuda::is_available());
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "catify=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
-    let weights = cached_weights().await?;
-    let net = resnet::resnet50(&weights.root(), 10);
+    debug!("Cuda is available {}", Cuda::is_available());
+
+    let model: CModule = trained_model().await?;
+
+    let image = imagenet::load_image_and_resize("tests/1.jpeg".to_owned(), 640, 640)?;
+    let output = model
+        .forward_ts(&[image.unsqueeze(0)])
+        .expect("model loaded")
+        .softmax(-1, Float);
+    debug!("{}", output);
     Ok(())
 }
