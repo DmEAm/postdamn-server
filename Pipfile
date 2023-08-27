@@ -1,11 +1,21 @@
 [[source]]
+url = "https://download.pytorch.org/whl/nightly/cu121"
+verify_ssl = true
+name = "torch"
+
+[[source]]
 url = "https://pypi.python.org/simple"
 verify_ssl = true
 name = "pypi"
 
 [packages]
 click = "*"
-torch = "*"
 numpy = "*"
+matplotlib = "*"
+opencv-python = "*"
+pandas = "*"
+torch = { version = "*", index = "torch" }
+torchvision = { version = "*", index = "torch" }
+torchaudio = { version = "*", index = "torch" }
 
 [dev-packages]

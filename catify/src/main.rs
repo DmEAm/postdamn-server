@@ -4,7 +4,7 @@ use std::io::copy;
 
 use error_chain::error_chain;
 use reqwest::Url;
-use tch::{CModule, Cuda, Device, vision::resnet};
+use tch::{nn::ModuleT, Cuda, Device, vision::resnet, TrainableCModule};
 use tch::Kind::Float;
 use tch::nn::VarStore;
 use tch::vision::imagenet;
@@ -20,7 +20,7 @@ error_chain! {
          HttpRequest(reqwest::Error);
      }
 }
-async fn trained_model() -> Result<CModule> {
+async fn trained_model() -> Result<VarStore> {
     let weights_url =
         Url::parse("https://download.pytorch.org/models/resnet50-0676ba61.pth").expect("valid url");
 
@@ -52,7 +52,9 @@ async fn trained_model() -> Result<CModule> {
             dest
         }
     };
-    Ok(CModule::load(file_name)?)
+
+    let vs = VarStore::new(Device::cuda_if_available());
+    Ok(vs)
 }
 
 #[tokio::main]
@@ -67,12 +69,12 @@ async fn main() -> Result<()> {
 
     debug!("Cuda is available {}", Cuda::is_available());
 
-    let model: CModule = trained_model().await?;
+    let weights = trained_model().await?;
+    let model = resnet::resnet50(&weights.root(), 10);
 
     let image = imagenet::load_image_and_resize("tests/1.jpeg".to_owned(), 640, 640)?;
     let output = model
-        .forward_ts(&[image.unsqueeze(0)])
-        .expect("model loaded")
+        .forward_t(&image.unsqueeze(0), false)
         .softmax(-1, Float);
     debug!("{}", output);
     Ok(())
